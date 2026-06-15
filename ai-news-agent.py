@@ -21,7 +21,7 @@ import imaplib
 import os
 import smtplib
 import sys
-from datetime import date
+from datetime import date, timedelta
 from email.message import EmailMessage
 
 import anthropic
@@ -86,7 +86,7 @@ def summarize_with_claude(
         )
 
     today = date.today()
-    week_start = today.replace(day=today.day - 6)
+    week_start = today - timedelta(days=6)
     week_start_cs = _fmt_date_cs(week_start)
     today_cs = _fmt_date_cs(today)
     date_range_cs = f"{week_start_cs} – {today_cs}"
@@ -100,10 +100,10 @@ def summarize_with_claude(
         "<tr>"
         '<td width="4" bgcolor="ACCENT_COLOR" style="background-color:ACCENT_COLOR;width:4px;">&nbsp;</td>'
         '<td bgcolor="#f8f9fa" style="background-color:#f8f9fa;padding:16px 20px;">'
-        '<h3 style="margin:0 0 8px;color:HEADING_COLOR;font-size:17px;font-family:Arial,Helvetica,sans-serif;">NADPIS V ČEŠTINĚ</h3>'
+        '<h3 style="margin:0 0 8px;color:HEADING_COLOR;font-size:17px;font-family:Arial,Helvetica,sans-serif;">HEADLINE IN CZECH</h3>'
         '<p style="margin:0 0 12px;color:#374151;font-size:14px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">'
-        "POPIS 1 AŽ 2 VĚTY V ČEŠTINĚ</p>"
-        '<a href="URL_ZDROJE" style="color:ACCENT_COLOR;text-decoration:none;font-size:13px;font-weight:600;font-family:Arial,Helvetica,sans-serif;">Číst více &rarr;</a>'
+        "DESCRIPTION 1 TO 2 SENTENCES IN CZECH</p>"
+        '<a href="SOURCE_URL" style="color:ACCENT_COLOR;text-decoration:none;font-size:13px;font-weight:600;font-family:Arial,Helvetica,sans-serif;">Číst více &rarr;</a>'
         "</td></tr></table>"
     )
     general_card = card_template.replace("ACCENT_COLOR", "#2563eb").replace(
@@ -114,39 +114,46 @@ def summarize_with_claude(
     )
 
     prompt = (
-        f"Zde jsou výsledky dvou vyhledávání zpráv o umělé inteligenci za posledních 7 dní ({date_range_cs}).\n\n"
-        "Napiš týdenní přehled CELÝ V ČEŠTINĚ jako obsah HTML e-mailu se DVĚMA oddíly.\n\n"
-        "Vrať POUZE HTML fragment — žádné značky <html>, <head> nebo <body>, "
-        "žádné ohraničení ```html a žádný text navíc před nebo za HTML.\n\n"
-        "DŮLEŽITÉ: Pokud uvádíš jakékoli datum v textu, piš názvy měsíců VÝHRADNĚ v češtině "
+        f"Here are the results of two AI news searches covering the past 7 days ({date_range_cs}).\n\n"
+        "Write a weekly digest AS ENTIRELY IN CZECH as the content of an HTML email with TWO sections.\n\n"
+        "Return ONLY an HTML fragment — no <html>, <head>, or <body> tags, "
+        "no ```html fences, and no extra text before or after the HTML.\n\n"
+        "IMPORTANT: When mentioning any date in the text, write month names EXCLUSIVELY in Czech "
         "(ledna, února, března, dubna, května, června, července, srpna, září, října, listopadu, prosince). "
-        "Nepoužívej slovenské ani maďarské názvy měsíců.\n\n"
+        "Do not use Slovak or Hungarian month names.\n\n"
+        "CZECH LANGUAGE RULES:\n"
+        "- Write simply and naturally so that a non-technical reader can understand the text.\n"
+        "- For technical terms that do not translate well (e.g. inference, token, benchmark, "
+        "fine-tuning, model), keep them in English and add a brief Czech explanation in brackets, "
+        "for example: 'inference (generování odpovědi AI)'.\n"
+        "- Avoid unusual or archaic Czech words — if unsure, use a simpler alternative.\n"
+        "- Headlines should be clear and descriptive, not literal translations.\n\n"
         "════════════════════════════════════════\n"
-        "ODDÍL 1 – Obecné AI novinky\n"
+        "SECTION 1 – General AI news\n"
         "════════════════════════════════════════\n"
         f"{general_sources}\n\n"
-        "Pro tento oddíl vytvoř:\n"
-        "1. Nadpis oddílu PŘESNĚ v tomto formátu:\n"
+        "For this section create:\n"
+        "1. Section heading EXACTLY in this format:\n"
         '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
-        "2. Jeden shrnující odstavec ve formátu:\n"
-        '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">JEDNA VĚTA SHRNUTÍ</p>\n'
-        "3. Poté 3 až 5 nejdůležitějších karet PŘESNĚ v tomto formátu (vynech duplicitní zprávy):\n"
+        "2. One summary paragraph in this format:\n"
+        '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
+        "3. Then 3 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
         f"{general_card}\n\n"
         "════════════════════════════════════════\n"
-        "ODDÍL 2 – AI ve vědě a výzkumu\n"
+        "SECTION 2 – AI in science and research\n"
         "════════════════════════════════════════\n"
         f"{science_sources}\n\n"
-        "Před tímto oddílem vlož oddělovač PŘESNĚ v tomto formátu:\n"
+        "Before this section insert a divider EXACTLY in this format:\n"
         '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
         '<tr><td style="border-top:2px solid #e5e7eb;font-size:0;">&nbsp;</td></tr></table>\n'
-        "Pro tento oddíl vytvoř:\n"
-        "1. Nadpis oddílu PŘESNĚ v tomto formátu:\n"
+        "For this section create:\n"
+        "1. Section heading EXACTLY in this format:\n"
         '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n'
-        "2. Jeden shrnující odstavec ve formátu:\n"
-        '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">JEDNA VĚTA SHRNUTÍ</p>\n'
-        "3. Poté 3 až 5 nejdůležitějších karet PŘESNĚ v tomto formátu (vynech duplicitní zprávy):\n"
+        "2. One summary paragraph in this format:\n"
+        '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
+        "3. Then 3 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
         f"{science_card}\n\n"
-        "Nadpisy a popisy přelož a napiš v češtině; URL ponech beze změny."
+        "Translate all headlines and descriptions into Czech; leave URLs unchanged."
     )
 
     # Stream the response so a long digest can't hit a request timeout.
@@ -213,7 +220,7 @@ def send_email(summary: str) -> None:
     port = int(os.environ.get("SMTP_PORT", "587"))
 
     today = date.today()
-    week_start_cs = _fmt_date_cs(today.replace(day=today.day - 6))
+    week_start_cs = _fmt_date_cs(today - timedelta(days=6))
     today_cs = _fmt_date_cs(today)
     msg = EmailMessage()
     msg["Subject"] = f"Týdenní přehled AI novinek – {week_start_cs} až {today_cs}"

@@ -49,7 +49,7 @@ ai-news-agent/
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 - A [Tavily](https://tavily.com) API key
 - An [Anthropic](https://console.anthropic.com) API key
 - A Gmail account with:
