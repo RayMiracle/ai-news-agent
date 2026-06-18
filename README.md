@@ -12,6 +12,8 @@ to Trash automatically.
 1. **Searches for AI news (×2)** — queries Tavily for the last 7 days across two topics:
    - 🤖 General AI news (`top artificial intelligence news this week`)
    - 🔬 AI in science & research (`artificial intelligence science research breakthroughs this week`)
+   
+   Results are automatically filtered — listing/category pages and articles behind a paywall (WSJ, FT, Bloomberg, NYT, and others) are excluded. A section is silently skipped if no freely accessible articles are found for it.
 2. **Summarises in Czech** — sends both result sets to Claude (Haiku 4.5), which writes
    a two-section weekly digest as a styled HTML email compatible with Gmail and Yahoo Mail.
 3. **Sends the email** — delivers the digest via Gmail SMTP to the configured recipient.
@@ -26,8 +28,8 @@ to Trash automatically.
 
 | Section | Colour | Content |
 |---|---|---|
-| 🤖 AI Novinky | Blue | 3–5 top general AI news stories |
-| 🔬 AI ve vědě a výzkumu | Green | 3–5 AI science & research breakthroughs |
+| 🤖 AI Novinky | Blue | 4–5 top general AI news stories |
+| 🔬 AI ve vědě a výzkumu | Green | 4–5 AI science & research breakthroughs |
 
 Each section contains an intro summary paragraph followed by article cards with a
 title, 1–2 sentence description, and a "Číst více →" link.

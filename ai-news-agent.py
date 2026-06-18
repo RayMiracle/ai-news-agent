@@ -23,6 +23,7 @@ import smtplib
 import sys
 from datetime import date, timedelta
 from email.message import EmailMessage
+from urllib.parse import urlparse
 
 import anthropic
 from dotenv import load_dotenv
@@ -44,6 +45,66 @@ def _fmt_date_cs(d: date) -> str:
     return f"{d.day}. {_CZECH_MONTHS[d.month - 1]} {d.year}"
 
 
+def _is_article_url(url: str) -> bool:
+    """Return True if the URL looks like a specific article rather than a listing page.
+
+    Category/section pages (e.g. site.com/ai/ or site.com/) have very short URL
+    paths and tend to link out to many articles instead of containing one story.
+    Requiring at least 2 non-empty path segments filters most of them out.
+    """
+    try:
+        segments = [s for s in urlparse(url).path.strip("/").split("/") if s]
+        return len(segments) >= 2
+    except Exception:
+        return True  # keep the result if URL parsing fails
+
+
+# Domains known to require a paid subscription for full article access.
+_PAYWALLED_DOMAINS = {
+    "wsj.com",
+    "ft.com",
+    "nytimes.com",
+    "bloomberg.com",
+    "thetimes.co.uk",
+    "thetimes.com",
+    "economist.com",
+    "hbr.org",
+    "wired.com",
+    "theatlantic.com",
+    "newyorker.com",
+    "businessinsider.com",
+    "forbes.com",
+    "washingtonpost.com",
+    "telegraph.co.uk",
+    "spectator.co.uk",
+    "seekingalpha.com",
+    "barrons.com",
+    "marketwatch.com",
+}
+
+# Minimum scraped content length (characters). Tavily returns only a short teaser
+# when it hits a paywall, so anything below this threshold is likely gated.
+_MIN_CONTENT_LENGTH = 200
+
+
+def _is_freely_readable(result: dict) -> bool:
+    """Return True if the article appears to be freely accessible."""
+    url = result.get("url", "")
+    try:
+        host = urlparse(url).hostname or ""
+        # Strip 'www.' prefix for comparison.
+        domain = host.removeprefix("www.")
+        # Check the domain itself and any parent domain (e.g. sub.wsj.com → wsj.com).
+        parts = domain.split(".")
+        for i in range(len(parts) - 1):
+            if ".".join(parts[i:]) in _PAYWALLED_DOMAINS:
+                return False
+    except Exception:
+        pass
+    content = result.get("content", "")
+    return len(content) >= _MIN_CONTENT_LENGTH
+
+
 def search_ai_news(tavily: TavilyClient) -> tuple[list[dict], list[dict]]:
     """Run two Tavily searches and return (general_news, science_news)."""
     def _search(query: str, label: str) -> list[dict]:
@@ -56,6 +117,10 @@ def search_ai_news(tavily: TavilyClient) -> tuple[list[dict], list[dict]]:
             include_answer=False,
         )
         results = response.get("results", [])
+        results = [
+            r for r in results
+            if _is_article_url(r.get("url", "")) and _is_freely_readable(r)
+        ]
         if not results:
             print(f"No results returned for '{label}'.", file=sys.stderr)
         return results
@@ -91,8 +156,9 @@ def summarize_with_claude(
     today_cs = _fmt_date_cs(today)
     date_range_cs = f"{week_start_cs} – {today_cs}"
 
-    general_sources = _build_sources(general_articles)
-    science_sources = _build_sources(science_articles)
+    # Build sources only for non-empty lists.
+    general_sources = _build_sources(general_articles) if general_articles else None
+    science_sources = _build_sources(science_articles) if science_articles else None
 
     # Reusable card template description for the prompt.
     card_template = (
@@ -113,9 +179,10 @@ def summarize_with_claude(
         "HEADING_COLOR", "#064e3b"
     )
 
-    prompt = (
-        f"Here are the results of two AI news searches covering the past 7 days ({date_range_cs}).\n\n"
-        "Write a weekly digest AS ENTIRELY IN CZECH as the content of an HTML email with TWO sections.\n\n"
+    section_count = "TWO sections" if (general_articles and science_articles) else "one section"
+    prompt_parts = [
+        f"Here are the results of AI news searches covering the past 7 days ({date_range_cs}).\n\n"
+        f"Write a weekly digest ENTIRELY IN CZECH as the content of an HTML email with {section_count}.\n\n"
         "Return ONLY an HTML fragment — no <html>, <head>, or <body> tags, "
         "no ```html fences, and no extra text before or after the HTML.\n\n"
         "IMPORTANT: When mentioning any date in the text, write month names EXCLUSIVELY in Czech "
@@ -127,34 +194,47 @@ def summarize_with_claude(
         "fine-tuning, model), keep them in English and add a brief Czech explanation in brackets, "
         "for example: 'inference (generování odpovědi AI)'.\n"
         "- Avoid unusual or archaic Czech words — if unsure, use a simpler alternative.\n"
-        "- Headlines should be clear and descriptive, not literal translations.\n\n"
-        "════════════════════════════════════════\n"
-        "SECTION 1 – General AI news\n"
-        "════════════════════════════════════════\n"
-        f"{general_sources}\n\n"
-        "For this section create:\n"
-        "1. Section heading EXACTLY in this format:\n"
-        '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
-        "2. One summary paragraph in this format:\n"
-        '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
-        "3. Then 3 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
-        f"{general_card}\n\n"
-        "════════════════════════════════════════\n"
-        "SECTION 2 – AI in science and research\n"
-        "════════════════════════════════════════\n"
-        f"{science_sources}\n\n"
-        "Before this section insert a divider EXACTLY in this format:\n"
-        '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
-        '<tr><td style="border-top:2px solid #e5e7eb;font-size:0;">&nbsp;</td></tr></table>\n'
-        "For this section create:\n"
-        "1. Section heading EXACTLY in this format:\n"
-        '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n'
-        "2. One summary paragraph in this format:\n"
-        '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
-        "3. Then 3 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
-        f"{science_card}\n\n"
-        "Translate all headlines and descriptions into Czech; leave URLs unchanged."
-    )
+        "- Headlines should be clear and descriptive, not literal translations.\n\n",
+    ]
+
+    if general_articles:
+        prompt_parts.append(
+            "════════════════════════════════════════\n"
+            "SECTION 1 – General AI news\n"
+            "════════════════════════════════════════\n"
+            f"{general_sources}\n\n"
+            "For this section create:\n"
+            "1. Section heading EXACTLY in this format:\n"
+            '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
+            "2. One summary paragraph in this format:\n"
+            '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
+            "3. Then 4 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
+            f"{general_card}\n\n"
+        )
+
+    if science_articles:
+        divider = (
+            "Before this section insert a divider EXACTLY in this format:\n"
+            '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
+            '<tr><td style="border-top:2px solid #e5e7eb;font-size:0;">&nbsp;</td></tr></table>\n'
+        ) if general_articles else ""
+        prompt_parts.append(
+            "════════════════════════════════════════\n"
+            "SECTION 2 – AI in science and research\n"
+            "════════════════════════════════════════\n"
+            f"{science_sources}\n\n"
+            + divider
+            + "For this section create:\n"
+            "1. Section heading EXACTLY in this format:\n"
+            '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n'
+            "2. One summary paragraph in this format:\n"
+            '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
+            "3. Then 4 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
+            f"{science_card}\n\n"
+        )
+
+    prompt_parts.append("Translate all headlines and descriptions into Czech; leave URLs unchanged.")
+    prompt = "".join(prompt_parts)
 
     # Stream the response so a long digest can't hit a request timeout.
     with client.messages.stream(
@@ -299,6 +379,10 @@ def main() -> None:
     general_articles, science_articles = search_ai_news(tavily)
     if not general_articles and not science_articles:
         sys.exit("No articles found; nothing to summarize.")
+    if not general_articles:
+        print("Warning: no general AI news articles found; that section will be skipped.", file=sys.stderr)
+    if not science_articles:
+        print("Warning: no AI science/research articles found; that section will be skipped.", file=sys.stderr)
 
     print(
         f"Summarizing {len(general_articles)} general + "
