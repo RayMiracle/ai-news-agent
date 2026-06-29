@@ -103,10 +103,12 @@ run-ai-news-agent.bat
 ### 5. Schedule with Windows Task Scheduler
 
 1. Open **Task Scheduler** → *Create Basic Task*
-2. Set the trigger: **Weekly → Sunday** at your preferred time (e.g. 21:00)
-3. Set the action: **Start a program**
+2. Set **Run whether user is logged on or not** option
+3. Set the trigger: **Weekly → Sunday** at your preferred time (e.g. 21:00)
+4. Set the action: **Start a program**
    - Program: `C:\Users\radim\AI_Engineer\ai-news-agent\run-ai-news-agent.bat`
-4. Finish and enable the task
+   - Start in: `C:\Users\radim\AI_Engineer\ai-news-agent`
+5. Finish and enable the task
 
 ---
 
