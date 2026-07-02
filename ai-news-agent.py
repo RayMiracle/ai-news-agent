@@ -167,8 +167,19 @@ def summarize_with_claude(
         '<td width="4" bgcolor="ACCENT_COLOR" style="background-color:ACCENT_COLOR;width:4px;">&nbsp;</td>'
         '<td bgcolor="#f8f9fa" style="background-color:#f8f9fa;padding:16px 20px;">'
         '<h3 style="margin:0 0 8px;color:HEADING_COLOR;font-size:17px;font-family:Arial,Helvetica,sans-serif;">HEADLINE IN CZECH</h3>'
-        '<p style="margin:0 0 12px;color:#374151;font-size:14px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">'
+        '<p style="margin:0 0 8px;color:#374151;font-size:14px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">'
         "DESCRIPTION 1 TO 2 SENTENCES IN CZECH</p>"
+        '<p style="margin:0 0 4px;color:#374151;font-size:13px;font-weight:600;font-family:Arial,Helvetica,sans-serif;">Hlavní poznatky:</p>'
+        '<ul style="margin:0 0 12px;padding-left:18px;color:#374151;font-size:13px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">'
+        '<li style="margin-bottom:3px;">BULLET POINT 1 IN CZECH</li>'
+        '<li style="margin-bottom:3px;">BULLET POINT 2 IN CZECH</li>'
+        '<li style="margin-bottom:3px;">BULLET POINT 3 IN CZECH (OPTIONAL)</li>'
+        "</ul>"
+        '<p style="margin:0 0 4px;color:#374151;font-size:13px;font-weight:600;font-family:Arial,Helvetica,sans-serif;">&#128161; Pro AI Engineera:</p>'
+        '<ul style="margin:0 0 12px;padding-left:18px;color:#374151;font-size:13px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">'
+        '<li style="margin-bottom:3px;">PRACTICAL BULLET POINT 1 FOR AI ENGINEER IN CZECH</li>'
+        '<li style="margin-bottom:3px;">PRACTICAL BULLET POINT 2 FOR AI ENGINEER IN CZECH (OPTIONAL)</li>'
+        "</ul>"
         '<a href="SOURCE_URL" style="color:ACCENT_COLOR;text-decoration:none;font-size:13px;font-weight:600;font-family:Arial,Helvetica,sans-serif;">Číst více &rarr;</a>'
         "</td></tr></table>"
     )
@@ -180,7 +191,7 @@ def summarize_with_claude(
     )
 
     section_count = "TWO sections" if (general_articles and science_articles) else "one section"
-    prompt_parts = [
+    base_prompt = (
         f"Here are the results of AI news searches covering the past 7 days ({date_range_cs}).\n\n"
         f"Write a weekly digest ENTIRELY IN CZECH as the content of an HTML email with {section_count}.\n\n"
         "Return ONLY an HTML fragment — no <html>, <head>, or <body> tags, "
@@ -194,63 +205,89 @@ def summarize_with_claude(
         "fine-tuning, model), keep them in English and add a brief Czech explanation in brackets, "
         "for example: 'inference (generování odpovědi AI)'.\n"
         "- Avoid unusual or archaic Czech words — if unsure, use a simpler alternative.\n"
-        "- Headlines should be clear and descriptive, not literal translations.\n\n",
-    ]
+        "- Headlines should be clear and descriptive, not literal translations.\n\n"
+        "- In each story card, include two separate blocks below the description:\n"
+        "  1) 'Hlavní poznatky:' with 2 to 3 factual bullet points (what happened, why it matters, what was found).\n"
+        "  2) '&#128161; Pro AI Engineera:' with 1 to 2 practical bullet points for an AI Engineer (what to watch, what to learn, and how it could be applied in practice).\n\n"
+    )
 
+    divider_html = (
+        '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
+        '<tr><td style="border-top:2px solid #e5e7eb;font-size:0;">&nbsp;</td></tr></table>'
+    )
+
+    def _call_claude(prompt: str) -> str:
+        with client.messages.stream(
+            model=CLAUDE_MODEL,
+            max_tokens=8000,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            message = stream.get_final_message()
+        fragment = "".join(
+            block.text for block in message.content if block.type == "text"
+        ).strip()
+        # Defensively strip a stray ```html ... ``` fence if the model adds one.
+        if fragment.startswith("```"):
+            fragment = fragment.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        # Strip prompt-separator lines if the model accidentally echoes them.
+        fragment = "\n".join(
+            line for line in fragment.splitlines() if not line.lstrip().startswith("═")
+        ).strip()
+        return fragment
+
+    general_fragment = ""
     if general_articles:
-        prompt_parts.append(
-            "════════════════════════════════════════\n"
-            "SECTION 1 – General AI news\n"
-            "════════════════════════════════════════\n"
-            f"{general_sources}\n\n"
-            "For this section create:\n"
-            "1. Section heading EXACTLY in this format:\n"
-            '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
-            "2. One summary paragraph in this format:\n"
-            '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
-            "3. Then 4 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
-            f"{general_card}\n\n"
-        )
-
-    if science_articles:
-        divider = (
-            "Before this section insert a divider EXACTLY in this format:\n"
-            '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">'
-            '<tr><td style="border-top:2px solid #e5e7eb;font-size:0;">&nbsp;</td></tr></table>\n'
-        ) if general_articles else ""
-        prompt_parts.append(
-            "════════════════════════════════════════\n"
-            "SECTION 2 – AI in science and research\n"
-            "════════════════════════════════════════\n"
-            f"{science_sources}\n\n"
-            + divider
+        general_prompt = (
+            base_prompt
+            + "════════════════════════════════════════\n"
+            + "SECTION 1 – General AI news\n"
+            + "════════════════════════════════════════\n"
+            + f"{general_sources}\n\n"
             + "For this section create:\n"
-            "1. Section heading EXACTLY in this format:\n"
-            '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n'
-            "2. One summary paragraph in this format:\n"
-            '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
-            "3. Then 4 to 5 of the most important cards EXACTLY in this format (skip duplicate stories):\n"
-            f"{science_card}\n\n"
+            + "1. Section heading EXACTLY in this format:\n"
+            + '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
+            + "2. One summary paragraph in this format:\n"
+            + '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
+            + "3. Then 6 to 8 of the most important and distinct cards EXACTLY in this format (skip duplicate stories):\n"
+            + f"{general_card}\n\n"
+            + "Translate all headlines and descriptions into Czech; leave URLs unchanged."
         )
+        general_fragment = _call_claude(general_prompt)
 
-    prompt_parts.append("Translate all headlines and descriptions into Czech; leave URLs unchanged.")
-    prompt = "".join(prompt_parts)
+    science_fragment = ""
+    if science_articles:
+        divider_instruction = (
+            "Before this section insert a divider EXACTLY in this format:\n"
+            + divider_html
+            + "\n"
+        ) if general_articles else ""
+        science_prompt = (
+            base_prompt
+            + "════════════════════════════════════════\n"
+            + "SECTION 2 – AI in science and research\n"
+            + "════════════════════════════════════════\n"
+            + f"{science_sources}\n\n"
+            + divider_instruction
+            + "For this section create:\n"
+            + "1. Section heading EXACTLY in this format:\n"
+            + '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n'
+            + "2. One summary paragraph in this format:\n"
+            + '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
+            + "3. Then 6 to 8 of the most important and distinct cards EXACTLY in this format (skip duplicate stories):\n"
+            + f"{science_card}\n\n"
+            + "Translate all headlines and descriptions into Czech; leave URLs unchanged."
+        )
+        science_fragment = _call_claude(science_prompt)
+        # We insert the divider ourselves between fragments below.
+        if science_fragment.startswith(divider_html):
+            science_fragment = science_fragment[len(divider_html):].lstrip()
 
-    # Stream the response so a long digest can't hit a request timeout.
-    with client.messages.stream(
-        model=CLAUDE_MODEL,
-        max_tokens=4000,
-        messages=[{"role": "user", "content": prompt}],
-    ) as stream:
-        message = stream.get_final_message()
-
-    body = "".join(
-        block.text for block in message.content if block.type == "text"
-    ).strip()
-
-    # Defensively strip a stray ```html ... ``` fence if the model adds one.
-    if body.startswith("```"):
-        body = body.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    if general_fragment and science_fragment:
+        body = f"{general_fragment}\n\n{divider_html}\n{science_fragment}"
+    elif general_fragment:
+        body = general_fragment
+    else:
+        body = science_fragment
 
     # Wrap the model's content in a Yahoo Mail-compatible table-based email shell.
     # - Table layout instead of divs (Yahoo strips unsupported block elements)
