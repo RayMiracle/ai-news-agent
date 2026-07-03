@@ -106,8 +106,9 @@ def _is_freely_readable(result: dict) -> bool:
 
 
 def search_ai_news(tavily: TavilyClient) -> tuple[list[dict], list[dict]]:
-    """Run two Tavily searches and return (general_news, science_news)."""
+    """Run two Tavily searches once and return (general_news, science_news)."""
     def _search(query: str, label: str) -> list[dict]:
+        # Single-pass search by design; if nothing is found we do not retry.
         response = tavily.search(
             query=query,
             topic="news",
@@ -139,7 +140,7 @@ def summarize_with_claude(
     general_articles: list[dict],
     science_articles: list[dict],
 ) -> str:
-    """Summarize both article sets into a two-section styled HTML email digest (in Czech)."""
+    """Summarize the available article sets in one Claude call into an HTML digest."""
 
     def _build_sources(articles: list[dict]) -> str:
         return "\n\n".join(
@@ -168,7 +169,7 @@ def summarize_with_claude(
         '<td bgcolor="#f8f9fa" style="background-color:#f8f9fa;padding:16px 20px;">'
         '<h3 style="margin:0 0 8px;color:HEADING_COLOR;font-size:17px;font-family:Arial,Helvetica,sans-serif;">HEADLINE IN CZECH</h3>'
         '<p style="margin:0 0 8px;color:#374151;font-size:14px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">'
-        "DESCRIPTION 1 TO 2 SENTENCES IN CZECH</p>"
+        "DESCRIPTION 2 TO 3 SENTENCES IN CZECH</p>"
         '<p style="margin:0 0 4px;color:#374151;font-size:13px;font-weight:600;font-family:Arial,Helvetica,sans-serif;">Hlavní poznatky:</p>'
         '<ul style="margin:0 0 12px;padding-left:18px;color:#374151;font-size:13px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">'
         '<li style="margin-bottom:3px;">BULLET POINT 1 IN CZECH</li>'
@@ -188,27 +189,6 @@ def summarize_with_claude(
     )
     science_card = card_template.replace("ACCENT_COLOR", "#059669").replace(
         "HEADING_COLOR", "#064e3b"
-    )
-
-    section_count = "TWO sections" if (general_articles and science_articles) else "one section"
-    base_prompt = (
-        f"Here are the results of AI news searches covering the past 7 days ({date_range_cs}).\n\n"
-        f"Write a weekly digest ENTIRELY IN CZECH as the content of an HTML email with {section_count}.\n\n"
-        "Return ONLY an HTML fragment — no <html>, <head>, or <body> tags, "
-        "no ```html fences, and no extra text before or after the HTML.\n\n"
-        "IMPORTANT: When mentioning any date in the text, write month names EXCLUSIVELY in Czech "
-        "(ledna, února, března, dubna, května, června, července, srpna, září, října, listopadu, prosince). "
-        "Do not use Slovak or Hungarian month names.\n\n"
-        "CZECH LANGUAGE RULES:\n"
-        "- Write simply and naturally so that a non-technical reader can understand the text.\n"
-        "- For technical terms that do not translate well (e.g. inference, token, benchmark, "
-        "fine-tuning, model), keep them in English and add a brief Czech explanation in brackets, "
-        "for example: 'inference (generování odpovědi AI)'.\n"
-        "- Avoid unusual or archaic Czech words — if unsure, use a simpler alternative.\n"
-        "- Headlines should be clear and descriptive, not literal translations.\n\n"
-        "- In each story card, include two separate blocks below the description:\n"
-        "  1) 'Hlavní poznatky:' with 2 to 3 factual bullet points (what happened, why it matters, what was found).\n"
-        "  2) '&#128161; Pro AI Engineera:' with 1 to 2 practical bullet points for an AI Engineer (what to watch, what to learn, and how it could be applied in practice).\n\n"
     )
 
     divider_html = (
@@ -235,59 +215,63 @@ def summarize_with_claude(
         ).strip()
         return fragment
 
-    general_fragment = ""
-    if general_articles:
-        general_prompt = (
-            base_prompt
-            + "════════════════════════════════════════\n"
-            + "SECTION 1 – General AI news\n"
-            + "════════════════════════════════════════\n"
-            + f"{general_sources}\n\n"
-            + "For this section create:\n"
-            + "1. Section heading EXACTLY in this format:\n"
-            + '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
-            + "2. One summary paragraph in this format:\n"
-            + '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
-            + "3. Then 6 to 8 of the most important and distinct cards EXACTLY in this format (skip duplicate stories):\n"
-            + f"{general_card}\n\n"
-            + "Translate all headlines and descriptions into Czech; leave URLs unchanged."
+    section_blocks = []
+    if general_sources:
+        section_blocks.append(
+            "════════════════════════════════════════\n"
+            "SECTION 1 – General AI news\n"
+            "════════════════════════════════════════\n"
+            f"{general_sources}\n"
         )
-        general_fragment = _call_claude(general_prompt)
-
-    science_fragment = ""
-    if science_articles:
-        divider_instruction = (
-            "Before this section insert a divider EXACTLY in this format:\n"
-            + divider_html
-            + "\n"
-        ) if general_articles else ""
-        science_prompt = (
-            base_prompt
-            + "════════════════════════════════════════\n"
-            + "SECTION 2 – AI in science and research\n"
-            + "════════════════════════════════════════\n"
-            + f"{science_sources}\n\n"
-            + divider_instruction
-            + "For this section create:\n"
-            + "1. Section heading EXACTLY in this format:\n"
-            + '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n'
-            + "2. One summary paragraph in this format:\n"
-            + '<p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;font-family:Arial,Helvetica,sans-serif;">ONE SENTENCE SUMMARY IN CZECH</p>\n'
-            + "3. Then 6 to 8 of the most important and distinct cards EXACTLY in this format (skip duplicate stories):\n"
-            + f"{science_card}\n\n"
-            + "Translate all headlines and descriptions into Czech; leave URLs unchanged."
+    if science_sources:
+        section_blocks.append(
+            "════════════════════════════════════════\n"
+            "SECTION 2 – AI in science and research\n"
+            "════════════════════════════════════════\n"
+            f"{science_sources}\n"
         )
-        science_fragment = _call_claude(science_prompt)
-        # We insert the divider ourselves between fragments below.
-        if science_fragment.startswith(divider_html):
-            science_fragment = science_fragment[len(divider_html):].lstrip()
 
-    if general_fragment and science_fragment:
-        body = f"{general_fragment}\n\n{divider_html}\n{science_fragment}"
-    elif general_fragment:
-        body = general_fragment
-    else:
-        body = science_fragment
+    prompt = (
+        f"Here are the results of AI news searches covering the past 7 days ({date_range_cs}).\n\n"
+        "Write a weekly digest ENTIRELY IN CZECH as the content of an HTML email.\n"
+        "Use ONLY the sections for which source stories are provided below. If a section has no sources, omit it.\n\n"
+        "Return ONLY an HTML fragment — no <html>, <head>, or <body> tags, "
+        "no ```html fences, and no extra text before or after the HTML.\n\n"
+        "IMPORTANT: When mentioning any date in the text, write month names EXCLUSIVELY in Czech "
+        "(ledna, února, března, dubna, května, června, července, srpna, září, října, listopadu, prosince). "
+        "Do not use Slovak or Hungarian month names.\n\n"
+        "CZECH LANGUAGE RULES:\n"
+        "- Write simply and naturally so that a non-technical reader can understand the text.\n"
+        "- For technical terms that do not translate well (e.g. inference, token, benchmark, "
+        "fine-tuning, model), keep them in English and add a brief Czech explanation in brackets, "
+        "for example: 'inference (generování odpovědi AI)'.\n"
+        "- Avoid unusual or archaic Czech words — if unsure, use a simpler alternative.\n"
+        "- Headlines should be clear and descriptive, not literal translations.\n\n"
+        "SECTION OUTPUT RULES:\n"
+        "- For each included section output exactly:\n"
+        "  1) Section heading in the required style\n"
+        "  2) Intro summary paragraph\n"
+        "  3) EXACTLY 3 story cards — no more, no fewer\n"
+        "- In each story card, description must be 2 to 3 sentences in Czech.\n"
+        "- In each story card, include two separate blocks below the description:\n"
+        "  1) 'Hlavní poznatky:' with 2 to 3 factual bullet points (what happened, why it matters, what was found).\n"
+        "  2) '&#128161; Pro AI Engineera:' with 1 to 2 practical bullet points for an AI Engineer (what to watch, what to learn, and how it could be applied in practice).\n"
+        "- Translate all headlines and descriptions into Czech; leave URLs unchanged.\n\n"
+        "If BOTH sections are present, insert this divider exactly once between them:\n"
+        f"{divider_html}\n\n"
+        "Required section heading templates:\n"
+        "General section heading:\n"
+        '<h2 style="margin:0 0 12px;color:#1e3a8a;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#129302; AI Novinky</h2>\n'
+        "Science section heading:\n"
+        '<h2 style="margin:0 0 12px;color:#064e3b;font-size:19px;font-family:Arial,Helvetica,sans-serif;">&#128300; AI ve v&#283;d&#283; a v&#253;zkumu</h2>\n\n'
+        "Card template for general section:\n"
+        f"{general_card}\n\n"
+        "Card template for science section:\n"
+        f"{science_card}\n\n"
+        "SOURCES:\n"
+        + "\n".join(section_blocks)
+    )
+    body = _call_claude(prompt)
 
     # Wrap the model's content in a Yahoo Mail-compatible table-based email shell.
     # - Table layout instead of divs (Yahoo strips unsupported block elements)
@@ -423,7 +407,7 @@ def main() -> None:
 
     print(
         f"Summarizing {len(general_articles)} general + "
-        f"{len(science_articles)} science articles with Claude..."
+        f"{len(science_articles)} science articles with one Claude call..."
     )
     summary = summarize_with_claude(claude, general_articles, science_articles)
 
