@@ -21,7 +21,7 @@ import imaplib
 import os
 import smtplib
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from email.message import EmailMessage
 from urllib.parse import urlparse
 
@@ -126,13 +126,13 @@ def search_ai_news(tavily: TavilyClient) -> tuple[list[dict], list[dict]]:
             print(f"No results returned for '{label}'.", file=sys.stderr)
         return results
 
-    general = _search("top artificial intelligence news this week", "general AI news")
+    general = _search(
+        "top artificial intelligence news this week", "general AI news")
     science = _search(
         "artificial intelligence science research breakthroughs this week",
         "AI science & research",
     )
     return general, science
-
 
 
 def summarize_with_claude(
@@ -158,8 +158,10 @@ def summarize_with_claude(
     date_range_cs = f"{week_start_cs} – {today_cs}"
 
     # Build sources only for non-empty lists.
-    general_sources = _build_sources(general_articles) if general_articles else None
-    science_sources = _build_sources(science_articles) if science_articles else None
+    general_sources = _build_sources(
+        general_articles) if general_articles else None
+    science_sources = _build_sources(
+        science_articles) if science_articles else None
 
     # Reusable card template description for the prompt.
     card_template = (
@@ -356,15 +358,19 @@ def _trash_sent_email(sender: str, password: str, subject: str) -> None:
         #         print(" ", folder.decode() if isinstance(folder, bytes) else folder)
 
         # Gmail exposes the Sent folder under the Czech-locale UTF-7 encoded name.
-        status, _ = imap.select('"[Gmail]/Odeslan&AOE- po&AWE-ta"', readonly=False)
+        status, _ = imap.select(
+            '"[Gmail]/Odeslan&AOE- po&AWE-ta"', readonly=False)
         if status != "OK":
-            print("Could not open Gmail Sent folder; skipping trash step.", file=sys.stderr)
+            print("Could not open Gmail Sent folder; skipping trash step.",
+                  file=sys.stderr)
             return
 
         # Search for messages sent today to avoid trashing an unrelated old message.
-        status, data = imap.search(None, "ON", date.today().strftime("%d-%b-%Y"))
+        status, data = imap.search(
+            None, "ON", date.today().strftime("%d-%b-%Y"))
         if status != "OK" or not data or not data[0]:
-            print("No messages sent today found in Sent folder; skipping trash step.", file=sys.stderr)
+            print(
+                "No messages sent today found in Sent folder; skipping trash step.", file=sys.stderr)
             return
 
         # data[0] is a space-separated list of message sequence numbers in order.
@@ -379,7 +385,16 @@ def _trash_sent_email(sender: str, password: str, subject: str) -> None:
 
 
 def main() -> None:
-    load_dotenv()
+    from pathlib import Path
+    from datetime import datetime
+
+    print(f"Working directory: {os.getcwd()}")
+    print(f"Python executable: {sys.executable}")
+    print(f"Python version: {sys.version}")
+    print(f"Started: {datetime.now()}")
+
+    dotenv_path = Path(__file__).with_name(".env")
+    load_dotenv(dotenv_path)
 
     # Fail early with a clear message if any required variable is missing.
     required = [
@@ -414,6 +429,21 @@ def main() -> None:
     print("Sending email...")
     send_email(summary)
 
+    print(f"Finished: {datetime.now()}")
+
 
 if __name__ == "__main__":
-    main()
+    import traceback
+
+    try:
+        main()
+
+    except BaseException:
+        print("ERROR - see error.log", file=sys.stderr)
+        with open("error.log", "a", encoding="utf-8") as f:
+            f.write("\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"{datetime.now()}\n")
+            traceback.print_exc(file=f)
+
+        raise

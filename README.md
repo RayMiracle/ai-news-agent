@@ -131,6 +131,19 @@ run-ai-news-agent.bat
 
 ---
 
+## Notes & troubleshooting
+
+- **Gmail locale / IMAP folders:** The script moves the sent message to Trash using Gmail's Czech-localised IMAP folder names. If your Gmail account uses a different language, the cleanup step may fail. Either set your Gmail language to **Čeština (Czech)** or edit the `_trash_sent_email` function in `ai-news-agent.py` to use the correct IMAP folder names for your locale.
+- **Anthropic model:** The script defaults to Anthropic's Haiku-tier model (Haiku 4.5). If you need to change the model, update the `CLAUDE_MODEL` constant at the top of `ai-news-agent.py`.
+- **No-results behavior:** Each Tavily search is intentionally single-pass. If a section returns no freely accessible articles, that section is silently skipped and the digest will contain only the available section(s).
+
+## Running via Task Scheduler / batch file
+
+- The provided `run-ai-news-agent.bat` launcher changes to the project directory, appends start/end timestamps to `scheduler.log`, runs the virtualenv Python (`venv\Scripts\python.exe`) to execute `ai-news-agent.py`, redirects both stdout and stderr to `scheduler.log`, and records the process exit code.
+- **Check `scheduler.log`** in the `ai-news-agent` folder when troubleshooting scheduled runs — it contains the script output, error tracebacks, timestamps, and `ExitCode=`.
+- If your virtual environment is located elsewhere or you prefer using a system Python, edit the `.bat` to point to the correct Python executable (or replace the full path with `python` if the scheduler's PATH includes your interpreter).
+- When creating the scheduled task, ensure the **Start in** field is set to `C:\Users\radim\AI_Engineer\ai-news-agent` (or your project path) so relative paths and `.env` resolution work correctly. If the task runs under a different user, ensure that account has read access to the `.env` file and the virtual environment.
+
 ## How it works — flow
 
 ```
