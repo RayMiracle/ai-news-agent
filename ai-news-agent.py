@@ -386,7 +386,6 @@ def _trash_sent_email(sender: str, password: str, subject: str) -> None:
 
 def main() -> None:
     from pathlib import Path
-    from datetime import datetime
 
     print(f"Working directory: {os.getcwd()}")
     print(f"Python executable: {sys.executable}")
@@ -433,17 +432,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    import traceback
-
-    try:
-        main()
-
-    except BaseException:
-        print("ERROR - see error.log", file=sys.stderr)
-        with open("error.log", "a", encoding="utf-8") as f:
-            f.write("\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"{datetime.now()}\n")
-            traceback.print_exc(file=f)
-
-        raise
+    main()
