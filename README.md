@@ -10,9 +10,10 @@ moves the sent copy to Trash automatically.
 ## What it does
 
 1. **Searches for AI news (×2)** — queries Tavily once (no retry) for the last 7 days across two topics:
+
    - 🤖 General AI news (`top artificial intelligence news this week`)
    - 🔬 AI in science & research (`artificial intelligence science research breakthroughs this week`)
-   
+
    Results are automatically filtered — listing/category pages and articles behind a paywall (WSJ, FT, Bloomberg, NYT, and others) are excluded. A section is silently skipped if no freely accessible articles are found for it.
 2. **Summarizes in Czech (1 Claude call)** — sends both sections to Claude (Haiku 4.5)
    in a single request and receives one combined HTML fragment compatible with Gmail
@@ -20,19 +21,20 @@ moves the sent copy to Trash automatically.
 3. **Sends the email** — delivers the digest via Gmail SMTP to the configured recipient.
 4. **Cleans up** — connects to Gmail via IMAP and moves the sent message to Trash so
    your Sent folder stays clean.
-5. **Runs automatically** — scheduled via Windows Task Scheduler to fire every Sunday
-   evening without any manual intervention.
+5. **Runs automatically** — scheduled via GitHub Actions to fire every Sunday at
+   21:00 Prague time, with no local machine or manual intervention required.
 
 ---
 
 ## Email sections
 
-| Section | Colour | Content |
-|---|---|---|
-| 🤖 AI Novinky | Blue | 3 top general AI news stories |
-| 🔬 AI ve vědě a výzkumu | Green | 3 AI science & research breakthroughs |
+| Section                    | Colour | Content                               |
+| -------------------------- | ------ | ------------------------------------- |
+| 🤖 AI Novinky              | Blue   | 3 top general AI news stories         |
+| 🔬 AI ve vědě a výzkumu | Green  | 3 AI science & research breakthroughs |
 
 Each section contains an intro summary paragraph followed by article cards with:
+
 - title
 - 2–3 sentence description
 - **Hlavní poznatky:** 2–3 factual bullets
@@ -45,11 +47,12 @@ Each section contains an intro summary paragraph followed by article cards with:
 
 ```
 ai-news-agent/
-├── ai-news-agent.py        # Main script
-├── run-ai-news-agent.bat   # Launcher used by Task Scheduler
-├── .env                    # Secrets (not committed to Git)
-├── .gitignore              # Excludes .env and venv/
-└── venv/                   # Python virtual environment (not committed to Git)
+├── ai-news-agent.py                    # Main script
+├── requirements.txt                    # Python dependencies
+├── .github/workflows/ai-news-agent.yml # GitHub Actions schedule + workflow
+├── .env                                # Secrets for local runs (not committed to Git)
+├── .gitignore                          # Excludes .env and venv/
+└── venv/                               # Python virtual environment (not committed to Git)
 ```
 
 ---
@@ -68,7 +71,7 @@ ai-news-agent/
 
 ## Setup
 
-### 1. Create and activate the virtual environment
+### 1. Create and activate the virtual environment (for local runs)
 
 ```bat
 cd C:\Users\radim\AI_Engineer\ai-news-agent
@@ -79,10 +82,10 @@ venv\Scripts\activate
 ### 2. Install dependencies
 
 ```bat
-pip install anthropic tavily-python python-dotenv
+pip install -r requirements.txt
 ```
 
-### 3. Create the `.env` file
+### 3. Create the `.env` file (for local runs)
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
@@ -102,32 +105,38 @@ SMTP_PORT=587
 ### 4. Run manually to test
 
 ```bat
-run-ai-news-agent.bat
+python ai-news-agent.py
 ```
 
-### 5. Schedule with Windows Task Scheduler
+### 5. Automatic scheduling via GitHub Actions
 
-1. Open **Task Scheduler** → *Create Basic Task*
-2. Set **Run whether user is logged on or not** option
-3. Set the trigger: **Weekly → Sunday** at your preferred time (e.g. 21:00)
-4. Set the action: **Start a program**
-   - Program: `C:\Users\radim\AI_Engineer\ai-news-agent\run-ai-news-agent.bat`
-   - Start in: `C:\Users\radim\AI_Engineer\ai-news-agent`
-5. Finish and enable the task
+The workflow at [.github/workflows/ai-news-agent.yml](.github/workflows/ai-news-agent.yml)
+runs the script automatically — no local machine needs to be on.
+
+1. Add each `.env` variable as a **repository secret**
+   (*Settings → Secrets and variables → Actions → New repository secret*):
+   `ANTHROPIC_API_KEY`, `TAVILY_API_KEY`, `EMAIL_SENDER`, `EMAIL_RECIPIENT`,
+   `EMAIL_PASSWORD`, `SMTP_HOST`, `SMTP_PORT`
+2. The workflow triggers:
+   - **On schedule** — Sundays at 19:00 UTC (21:00 Prague time during CEST/summer;
+     20:00 during CET/winter, since GitHub Actions cron is fixed UTC and does not
+     shift with local DST)
+   - **On demand** — via the **Run workflow** button under the *Actions* tab
+     (`workflow_dispatch`), useful for testing changes without waiting for Sunday
 
 ---
 
 ## Configuration reference
 
-| Variable | Required | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key |
-| `TAVILY_API_KEY` | Yes | Tavily search API key |
-| `EMAIL_SENDER` | Yes | Gmail address used to send |
-| `EMAIL_RECIPIENT` | Yes | Address that receives the digest |
-| `EMAIL_PASSWORD` | Yes | Gmail App Password (16 characters) |
-| `SMTP_HOST` | No | SMTP host (default: `smtp.gmail.com`) |
-| `SMTP_PORT` | No | SMTP port (default: `587`) |
+| Variable              | Required | Description                            |
+| --------------------- | -------- | -------------------------------------- |
+| `ANTHROPIC_API_KEY` | Yes      | Anthropic API key                      |
+| `TAVILY_API_KEY`    | Yes      | Tavily search API key                  |
+| `EMAIL_SENDER`      | Yes      | Gmail address used to send             |
+| `EMAIL_RECIPIENT`   | Yes      | Address that receives the digest       |
+| `EMAIL_PASSWORD`    | Yes      | Gmail App Password (16 characters)     |
+| `SMTP_HOST`         | No       | SMTP host (default:`smtp.gmail.com`) |
+| `SMTP_PORT`         | No       | SMTP port (default:`587`)            |
 
 ---
 
@@ -136,13 +145,7 @@ run-ai-news-agent.bat
 - **Gmail locale / IMAP folders:** The script moves the sent message to Trash using Gmail's Czech-localised IMAP folder names. If your Gmail account uses a different language, the cleanup step may fail. Either set your Gmail language to **Čeština (Czech)** or edit the `_trash_sent_email` function in `ai-news-agent.py` to use the correct IMAP folder names for your locale.
 - **Anthropic model:** The script defaults to Anthropic's Haiku-tier model (Haiku 4.5). If you need to change the model, update the `CLAUDE_MODEL` constant at the top of `ai-news-agent.py`.
 - **No-results behavior:** Each Tavily search is intentionally single-pass. If a section returns no freely accessible articles, that section is silently skipped and the digest will contain only the available section(s).
-
-## Running via Task Scheduler / batch file
-
-- The provided `run-ai-news-agent.bat` launcher changes to the project directory, appends start/end timestamps to `scheduler.log`, runs the virtualenv Python (`venv\Scripts\python.exe`) to execute `ai-news-agent.py`, redirects both stdout and stderr to `scheduler.log`, and records the process exit code.
-- **Check `scheduler.log`** in the `ai-news-agent` folder when troubleshooting scheduled runs — it contains the script output, error tracebacks, timestamps, and `ExitCode=`.
-- If your virtual environment is located elsewhere or you prefer using a system Python, edit the `.bat` to point to the correct Python executable (or replace the full path with `python` if the scheduler's PATH includes your interpreter).
-- When creating the scheduled task, ensure the **Start in** field is set to `C:\Users\radim\AI_Engineer\ai-news-agent` (or your project path) so relative paths and `.env` resolution work correctly. If the task runs under a different user, ensure that account has read access to the `.env` file and the virtual environment.
+- **Checking scheduled runs:** Open the *Actions* tab on GitHub and select the "AI News Agent" workflow to see run history, logs, and any failures — no local log files are used.
 
 ## How it works — flow
 
