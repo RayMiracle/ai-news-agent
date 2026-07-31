@@ -297,6 +297,11 @@ def summarize_with_claude(
             </td>
           </tr>
           <tr>
+            <td bgcolor="#fef9c3" style="background-color:#fef9c3;padding:10px 28px;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;">
+              <p style="margin:0;font-size:12px;color:#713f12;">&#9888;&#65039; Tento obsah je automaticky generov&#225;n um&#283;lou inteligenc&#237; (Claude) na z&#225;klad&#283; vyhled&#225;v&#225;n&#237; Tavily, bez lidsk&#233; redakce. Informace si prosím ov&#283;&#345;te u p&#367;vodn&#237;ho zdroje.</p>
+            </td>
+          </tr>
+          <tr>
             <td bgcolor="#ffffff" style="background-color:#ffffff;padding:24px 28px;border-left:1px solid #e5e7eb;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;font-family:Arial,Helvetica,sans-serif;">
               {body}
             </td>
