@@ -26,6 +26,15 @@ moves the sent copy to Trash automatically.
 
 ---
 
+## AI disclosure (EU AI Act, Article 50)
+
+This project emails AI-generated content (Claude) to a real recipient with no human
+review before sending. The email itself carries a visible disclosure banner in the
+body stating it was AI-generated and recommending readers verify against the original
+source — see `ai-news-agent.py`.
+
+---
+
 ## Email sections
 
 | Section                    | Colour | Content                               |
