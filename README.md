@@ -7,6 +7,15 @@ moves the sent copy to Trash automatically.
 
 ---
 
+## License
+
+This project's code is MIT licensed (see `LICENSE`) -- read, reuse, or adapt
+it freely. No third-party content is redistributed: news article text/links
+come from the Tavily search API at request time and are only ever emailed
+to the configured recipient, not stored or committed to this repo.
+
+---
+
 ## What it does
 
 1. **Searches for AI news (×2)** — queries Tavily once (no retry) for the last 7 days across two topics:
